@@ -1,0 +1,102 @@
+version: '1'
+
+setup:
+  image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12@sha256:ff4053b0bca784d6d105fee1d008cfb20db206011453071e86b69ca3fde706a4
+  script: |
+    #!/usr/bin/env bash
+
+    GH_TOKEN=$(cat "$WORKSPACE/git-token")
+    OWNER=$(jq -r '.services[] | select(.toolchain_binding.name=="app-repo") | .parameters.owner_id' /toolchain/toolchain.json)
+    REPO=$(jq -r '.services[] | select(.toolchain_binding.name=="app-repo") | .parameters.repo_name' /toolchain/toolchain.json)
+
+    #curl -u ":$GH_TOKEN" https://github.ibm.com/api/v3/repos/$OWNER/$REPO/branches/master/protection -XPUT -d '{"required_pull_request_reviews":{"dismiss_stale_reviews":true},"required_status_checks":{"strict":true,"contexts":["tekton/code-branch-protection","tekton/code-unit-tests","tekton/code-cis-check","tekton/code-vulnerability-scan","tekton/code-detect-secrets"]},"enforce_admins":null,"restrictions":null}'
+    #npm ci
+
+test:
+  abort_on_failure: false
+  image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12@sha256:ff4053b0bca784d6d105fee1d008cfb20db206011453071e86b69ca3fde706a4
+  script: |
+    #!/usr/bin/env bash
+
+    cd ../"$(load_repo app-repo path)"
+    #npm ci
+    #npm test
+
+containerize:
+  dind: true
+  image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12@sha256:ff4053b0bca784d6d105fee1d008cfb20db206011453071e86b69ca3fde706a4
+  script: |
+    #!/bin/bash
+
+    if [[ "$PIPELINE_DEBUG" == 1 ]]; then
+      trap env EXIT
+      env
+      set -x
+    fi
+    
+    
+    # explicit debug, regardless of OnePipeline setup
+    env
+    set -x
+        
+    echo "Artifactory start"
+    echo $(get_env registry-for-images)
+    echo "Artifactory end"
+    
+    get_env registry-for-images > /tmp/registry-for-images.json
+    ARTIFACTORY=$(jq -r '.parameters.repository_name' /tmp/registry-for-images.json)
+    echo $ARTIFACTORY
+    
+    ARTIFACTORY_URL=$(jq -r '.parameters.repository_url' /tmp/registry-for-images.json)
+    echo $ARTIFACTORY_URL
+    
+    ARTIFACTORY_USER=$(jq -r '.parameters.user_id' /tmp/registry-for-images.json)
+    echo $ARTIFACTORY_USER
+    
+    ARTIFACTORY_TOKEN=$(jq -r '.parameters.token' /tmp/registry-for-images.json)
+    echo $ARTIFACTORY_TOKEN
+
+    # get the commit ID 
+    echo $TRIGGER_PAYLOAD > /tmp/trigger_payload.json
+    cat /tmp/trigger_payload.json
+    GIT_HEAD_COMMIT_ID=$(jq -r '.head_commit.id' /tmp/trigger_payload.json)
+    
+    #
+    # Insert code for Prow build here  
+    # 
+    
+    #chmod +x ./launch-travis.sh
+    #./launch-travis.sh -t $TRAVIS_TOKEN -r $TRAVIS_TARGET_REPO -c $GIT_HEAD_COMMIT_ID -l
+
+deploy:
+  image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12@sha256:ff4053b0bca784d6d105fee1d008cfb20db206011453071e86b69ca3fde706a4
+  script: |
+    #!/usr/bin/env bash
+
+    if [[ "$PIPELINE_DEBUG" == 1 ]]; then
+      trap env EXIT
+      env
+      set -x
+    fi
+
+    #source scripts/deploy_setup.sh
+    #source scripts/deploy.sh
+
+acceptance-test:
+  abort_on_failure: false
+  image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12@sha256:ff4053b0bca784d6d105fee1d008cfb20db206011453071e86b69ca3fde706a4
+  script: |
+    #!/usr/bin/env bash
+
+    #source /root/.nvm/nvm.sh
+    #npm ci
+    #export APP_URL=$(cat ../app-url)
+    #npm run acceptance-test
+
+release:
+  abort_on_failure: false
+  image: wcp-compliance-automation-team-docker-local.artifactory.swg-devops.com/ibm-compliance-automation:1.2.4@sha256:dc98cc52c0caede42149c08727147520e30e81fee543b8dd5939b45d06baa142
+  script: |
+    #!/usr/bin/env bash
+
+    #source scripts/release.sh
